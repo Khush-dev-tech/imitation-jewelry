@@ -10,9 +10,15 @@
 // application layer via Zod validation (TRD §2) at every write path.
 // Revisit if DB-level enforcement becomes a requirement.
 
+// Using the classic prisma-client-js generator at its default
+// node_modules/.prisma/client location (not a custom `output`) — Next.js
+// has long-standing special-cased tracing support for exactly that path.
+// A custom output path combined with the newer ESM `prisma-client`
+// generator was silently dropped from the deployed Vercel function bundle
+// (outputFileTracingIncludes didn't help — Vercel's builder never actually
+// included the engine binary despite Next's own .nft.json listing it).
 generator client {
-  provider      = "prisma-client"
-  output        = "../lib/generated/prisma"
+  provider      = "prisma-client-js"
   // "native" for local dev (Windows/Mac/Linux dev machines); explicit
   // rhel-openssl-3.0.x because Vercel's serverless Node.js runtime uses
   // Amazon Linux, which differs from whatever OS actually runs `npm install`

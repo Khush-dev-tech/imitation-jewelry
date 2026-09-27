@@ -40,7 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-/lib/generated/prisma
 
 # local dev image uploads (TRD §4 — replaced by Cloudinary later)
 /public/uploads

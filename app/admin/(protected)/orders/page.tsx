@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/Badge";
 import { prisma } from "@/lib/prisma";
 import { formatINR } from "@/lib/utils";
 import { OrderStatusFilter } from "@/components/admin/OrderStatusFilter";
-import type { OrderStatus } from "@/lib/generated/prisma/client";
+import type { OrderStatus } from "@prisma/client";
 
 /**
  * Admin: Orders — App Flow Screen 21 / PRD §8.13. Read-only visibility for

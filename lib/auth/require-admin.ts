@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminSession } from "./admin-session";
-import type { AdminUser } from "@/lib/generated/prisma/client";
+import type { AdminUser } from "@prisma/client";
 
 /**
  * Every admin API route must call this independently — the page-level

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import type { AdminUser } from "@/lib/generated/prisma/client";
+import type { AdminUser } from "@prisma/client";
 
 /**
  * Admin session management — Backend Schema §2/§4.3. Deliberately NOT
