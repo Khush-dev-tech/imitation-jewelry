@@ -1,0 +1,15 @@
+import { type HTMLAttributes } from "react";
+import { cn } from "@/lib/utils";
+
+/**
+ * Container — UI/UX Brief §4: max-width 1280px, centered, responsive
+ * side gutters (16px mobile, 24px tablet, 32-64px desktop).
+ */
+export function Container({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn("mx-auto w-full max-w-[1280px] px-4 sm:px-6 lg:px-16", className)}
+      {...props}
+    />
+  );
+}

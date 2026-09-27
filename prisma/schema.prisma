@@ -1,0 +1,481 @@
+// Prisma schema for Maruti Imitation Jewelry.
+// Translated directly from docs/05-backend-schema.md — every model, field,
+// and constraint below traces back to a numbered section in that document.
+// Do not add fields/models here that aren't already approved there.
+//
+// Note on CHECK constraints: docs/05-backend-schema.md specifies several
+// (price >= 0, compare_at_price > price, quantity > 0). Prisma's native
+// `@@check` support is still a preview feature; rather than depend on a
+// preview flag for a production schema, these are enforced at the
+// application layer via Zod validation (TRD §2) at every write path.
+// Revisit if DB-level enforcement becomes a requirement.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum AdminRole {
+  admin
+
+  @@map("admin_role")
+}
+
+enum UserType {
+  customer
+  admin
+
+  @@map("user_type")
+}
+
+enum StockStatus {
+  in_stock
+  out_of_stock
+
+  @@map("stock_status")
+}
+
+enum OrderStatus {
+  pending_confirmation
+  paid
+  payment_failed
+  cancelled
+  fulfilled
+
+  @@map("order_status")
+}
+
+enum OrderPaymentStatus {
+  not_applicable
+  pending
+  paid
+  failed
+  cancelled
+  refunded
+
+  @@map("order_payment_status")
+}
+
+enum PaymentAttemptStatus {
+  initiated
+  pending
+  success
+  failed
+  cancelled
+  refunded
+
+  @@map("payment_attempt_status")
+}
+
+enum WholesaleLeadStatus {
+  new
+  contacted
+  closed
+
+  @@map("wholesale_lead_status")
+}
+
+// ---------------------------------------------------------------------------
+// 4.1 admin_users — Backend Schema §4.1
+// ---------------------------------------------------------------------------
+model AdminUser {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  role         AdminRole @default(admin)
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  sessions  AdminSession[]
+  auditLogs AuditLog[]
+
+  @@map("admin_users")
+}
+
+// ---------------------------------------------------------------------------
+// 4.2 customers — Backend Schema §4.2
+// Constraint: at least one of email/phone present — enforced at the
+// application layer, as specified in the doc (Postgres check optional).
+// ---------------------------------------------------------------------------
+model Customer {
+  id           String   @id @default(uuid())
+  name         String
+  email        String?  @unique
+  phone        String?  @unique
+  passwordHash String   @map("password_hash")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  addresses CustomerAddress[]
+  carts     Cart[]
+  orders    Order[]
+
+  @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// 4.3 admin_sessions — Backend Schema §4.3 (admin only; customer sessions
+// are stateless Auth.js JWTs with no table, per Backend Schema §2)
+// ---------------------------------------------------------------------------
+model AdminSession {
+  id           String   @id @default(uuid())
+  adminUserId  String   @map("admin_user_id")
+  sessionToken String   @unique @map("session_token")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@map("admin_sessions")
+}
+
+// ---------------------------------------------------------------------------
+// 4.4 password_reset_tokens — Backend Schema §4.4
+// userId is polymorphic (customers.id or admin_users.id depending on
+// userType) and is application-enforced, not a Prisma relation, matching
+// the doc's explicit note that Postgres can't FK to two tables at once.
+// ---------------------------------------------------------------------------
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userType  UserType  @map("user_type")
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("password_reset_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// 4.5 categories — Backend Schema §4.5
+// ---------------------------------------------------------------------------
+model Category {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  imageUrl    String?  @map("image_url")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  products ProductCategory[]
+
+  @@map("categories")
+}
+
+// ---------------------------------------------------------------------------
+// 4.6 product_categories (join table) — Backend Schema §4.6
+// ---------------------------------------------------------------------------
+model ProductCategory {
+  productId  String @map("product_id")
+  categoryId String @map("category_id")
+
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId])
+  @@map("product_categories")
+}
+
+// ---------------------------------------------------------------------------
+// 4.7 products — Backend Schema §4.7
+// `sku` added per the client-confirmed WhatsApp product-enquiry template
+// (TRD §6) — nullable, since it does not expand PRD §8.12's save-blocking
+// required-field list.
+// ---------------------------------------------------------------------------
+model Product {
+  id               String      @id @default(uuid())
+  name             String
+  slug             String      @unique
+  sku              String?     @unique
+  description      String?
+  materialDetails  String?     @map("material_details")
+  careInstructions String?     @map("care_instructions")
+  price            Decimal     @db.Decimal(10, 2)
+  compareAtPrice   Decimal?    @map("compare_at_price") @db.Decimal(10, 2)
+  stockStatus      StockStatus @default(in_stock) @map("stock_status")
+  isNewArrival     Boolean     @default(false) @map("is_new_arrival")
+  isBestSeller     Boolean     @default(false) @map("is_best_seller")
+  metaTitle        String?     @map("meta_title")
+  metaDescription  String?     @map("meta_description")
+  isActive         Boolean     @default(true) @map("is_active")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  categories ProductCategory[]
+  images     ProductImage[]
+  variants   ProductVariant[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([stockStatus])
+  @@index([isActive])
+  @@map("products")
+}
+
+// ---------------------------------------------------------------------------
+// 4.8 product_images — Backend Schema §4.8
+// ---------------------------------------------------------------------------
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String   @map("product_id")
+  url       String
+  altText   String   @map("alt_text")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+  @@map("product_images")
+}
+
+// ---------------------------------------------------------------------------
+// 4.9 product_variants — Backend Schema §4.9
+// stockStatus is a nullable override (null = inherits the parent product's
+// stockStatus) — flagged in the doc as needing explicit client confirmation
+// before this is relied upon for real per-variant availability.
+// ---------------------------------------------------------------------------
+model ProductVariant {
+  id            String       @id @default(uuid())
+  productId     String       @map("product_id")
+  sku           String       @unique
+  attributes    Json
+  priceOverride Decimal?     @map("price_override") @db.Decimal(10, 2)
+  stockStatus   StockStatus? @map("stock_status")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  product   Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems CartItem[]
+
+  @@map("product_variants")
+}
+
+// ---------------------------------------------------------------------------
+// 4.10 carts — Backend Schema §4.10
+// Constraint: exactly one of customerId/sessionToken set — app-enforced.
+// ---------------------------------------------------------------------------
+model Cart {
+  id           String   @id @default(uuid())
+  customerId   String?  @map("customer_id")
+  sessionToken String?  @unique @map("session_token")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  customer Customer?  @relation(fields: [customerId], references: [id])
+  items    CartItem[]
+
+  @@map("carts")
+}
+
+// ---------------------------------------------------------------------------
+// 4.11 cart_items — Backend Schema §4.11
+// ---------------------------------------------------------------------------
+model CartItem {
+  id                String   @id @default(uuid())
+  cartId            String   @map("cart_id")
+  productId         String   @map("product_id")
+  variantId         String?  @map("variant_id")
+  quantity          Int
+  unitPriceSnapshot Decimal  @map("unit_price_snapshot") @db.Decimal(10, 2)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  cart    Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@unique([cartId, productId, variantId])
+  @@map("cart_items")
+}
+
+// ---------------------------------------------------------------------------
+// 4.12 customer_addresses — Backend Schema §4.12
+// ---------------------------------------------------------------------------
+model CustomerAddress {
+  id         String   @id @default(uuid())
+  customerId String   @map("customer_id")
+  label      String?
+  line1      String
+  line2      String?
+  city       String
+  state      String
+  pincode    String
+  country    String   @default("India")
+  isDefault  Boolean  @default(false) @map("is_default")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("customer_addresses")
+}
+
+// ---------------------------------------------------------------------------
+// 4.13 orders — Backend Schema §4.13
+// Delivery/contact fields are intentionally denormalized onto the order
+// (not solely via customer_addresses) so an order's record never changes
+// if the customer later edits/deletes a saved address.
+// Guest order access: the order's own id (UUID) is the bearer credential
+// for the confirmation URL — see Backend Schema §4.13's note.
+// ---------------------------------------------------------------------------
+model Order {
+  id              String             @id @default(uuid())
+  orderNumber     String             @unique @map("order_number")
+  customerId      String?            @map("customer_id")
+  contactName     String             @map("contact_name")
+  contactPhone    String             @map("contact_phone")
+  contactEmail    String?            @map("contact_email")
+  deliveryLine1   String             @map("delivery_line1")
+  deliveryLine2   String?            @map("delivery_line2")
+  deliveryCity    String             @map("delivery_city")
+  deliveryState   String             @map("delivery_state")
+  deliveryPincode String             @map("delivery_pincode")
+  deliveryCountry String             @default("India") @map("delivery_country")
+  subtotal        Decimal            @db.Decimal(10, 2)
+  total           Decimal            @db.Decimal(10, 2)
+  status          OrderStatus        @default(pending_confirmation)
+  paymentStatus   OrderPaymentStatus @default(pending) @map("payment_status")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  customer        Customer?        @relation(fields: [customerId], references: [id])
+  items           OrderItem[]
+  paymentAttempts PaymentAttempt[]
+
+  @@index([customerId])
+  @@index([status])
+  @@map("orders")
+}
+
+// ---------------------------------------------------------------------------
+// 4.14 order_items — Backend Schema §4.14
+// Snapshots product name/image/variant/price at purchase time so order
+// history survives later product edits or deletion (productId set null,
+// never cascade-deleted).
+// ---------------------------------------------------------------------------
+model OrderItem {
+  id                        String   @id @default(uuid())
+  orderId                   String   @map("order_id")
+  productId                 String?  @map("product_id")
+  productNameSnapshot       String   @map("product_name_snapshot")
+  productImageUrlSnapshot   String?  @map("product_image_url_snapshot")
+  variantAttributesSnapshot Json?    @map("variant_attributes_snapshot")
+  quantity                  Int
+  unitPriceSnapshot         Decimal  @map("unit_price_snapshot") @db.Decimal(10, 2)
+  lineTotal                 Decimal  @map("line_total") @db.Decimal(10, 2)
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@map("order_items")
+}
+
+// ---------------------------------------------------------------------------
+// 4.15 payment_attempts — Backend Schema §4.15
+// Never stores raw card data — only gateway-issued identifiers/status.
+// ---------------------------------------------------------------------------
+model PaymentAttempt {
+  id                       String               @id @default(uuid())
+  orderId                  String               @map("order_id")
+  gateway                  String
+  gatewayOrderId           String?              @map("gateway_order_id")
+  gatewayTransactionId     String?              @map("gateway_transaction_id")
+  amount                   Decimal              @db.Decimal(10, 2)
+  currency                 String               @default("INR")
+  status                   PaymentAttemptStatus @default(initiated)
+  webhookSignatureVerified Boolean              @default(false) @map("webhook_signature_verified")
+  failureReason            String?              @map("failure_reason")
+  createdAt                DateTime             @default(now()) @map("created_at")
+  updatedAt                DateTime             @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([gatewayTransactionId])
+  @@map("payment_attempts")
+}
+
+// ---------------------------------------------------------------------------
+// 4.16 wholesale_leads — Backend Schema §4.16
+// preferredContactTime added per the client-confirmed WhatsApp wholesale
+// template (TRD §6) — optional, never blocks form submission.
+// ---------------------------------------------------------------------------
+model WholesaleLead {
+  id                     String              @id @default(uuid())
+  name                   String
+  phone                  String
+  city                   String
+  businessName           String              @map("business_name")
+  quantityRequirement    String              @map("quantity_requirement")
+  productInterest        String              @map("product_interest")
+  preferredContactTime   String?             @map("preferred_contact_time")
+  status                 WholesaleLeadStatus @default(new)
+  whatsappDeepLinkOpened Boolean             @default(false) @map("whatsapp_deep_link_opened")
+  createdAt              DateTime            @default(now()) @map("created_at")
+  updatedAt              DateTime            @updatedAt @map("updated_at")
+
+  @@map("wholesale_leads")
+}
+
+// ---------------------------------------------------------------------------
+// 4.17 site_settings — Backend Schema §4.17
+// Single-row table. Contact fields (business email/address) resolve the
+// gap flagged in the doc's own audit — previously unmodeled, now here so
+// the business can update contact details without a code deploy.
+// ---------------------------------------------------------------------------
+model SiteSetting {
+  id                    String   @id @default(uuid())
+  paymentGatewayEnabled Boolean  @default(false) @map("payment_gateway_enabled")
+  whatsappNumber        String   @default("918849999457") @map("whatsapp_number")
+  businessEmail         String   @default("harshsindhav9@gmail.com") @map("business_email")
+  businessAddressLine1  String   @default("Satelite Chowk, Maruti Nagar Main Road") @map("business_address_line1")
+  businessAddressLine2  String?  @default("Near Shree Atal Bihari Vajpayee Auditorium") @map("business_address_line2")
+  businessCity          String   @default("Rajkot") @map("business_city")
+  businessState         String   @default("Gujarat") @map("business_state")
+  businessPincode       String   @default("360003") @map("business_pincode")
+  announcementBarText   String?  @map("announcement_bar_text")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("site_settings")
+}
+
+// ---------------------------------------------------------------------------
+// 4.18 audit_log — Backend Schema §4.18
+// Recommended addition (TRD §7 admin accountability), not an explicitly
+// named PRD feature — safe to drop without affecting any approved feature.
+// ---------------------------------------------------------------------------
+model AuditLog {
+  id          String   @id @default(uuid())
+  adminUserId String   @map("admin_user_id")
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id])
+
+  @@map("audit_log")
+}

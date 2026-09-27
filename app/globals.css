@@ -1,0 +1,77 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * Design tokens for Maruti Imitation Jewelry.
+ * Source of truth: docs/04-ui-ux-brief.md §2 (colour), §3 (typography).
+ * Tailwind v4 uses CSS-first theming — this @theme block is the
+ * equivalent of the tailwind.config.ts token definitions referenced in
+ * docs/06-implementation-plan.md; the token names below map 1:1 to the
+ * brief's `color-*` tokens (see the comment beside each).
+ *
+ * Spacing scale and breakpoints are NOT redefined here: Tailwind's
+ * default spacing scale (p-1=4px, p-4=16px, p-6=24px, p-8=32px,
+ * p-12=48px, p-16=64px, p-24=96px) and default breakpoints (sm=640px,
+ * lg=1024px) already match the brief's spacing scale (4/8/12/16/24/32/
+ * 48/64/96) and breakpoints (tablet 640px, desktop 1024px) exactly, so
+ * using Tailwind's built-in scale IS following the brief, not deviating
+ * from it.
+ */
+@theme inline {
+  /* Backgrounds — brief §2: color-bg-primary / color-bg-surface / color-bg-inverse */
+  --color-ivory: #fbf7f0;
+  --color-beige: #f3eadd;
+  --color-charcoal: #2b221c;
+
+  /* Text — brief §2: color-text-primary / color-text-inverse / color-text-muted */
+  --color-charcoal-muted: #6b5f55;
+
+  /* Brand — brief §2: color-brand-primary / color-brand-primary-hover / color-brand-accent */
+  --color-maroon: #6e1423;
+  --color-maroon-dark: #591019;
+  --color-gold: #b08d57;
+
+  /* Semantic status — brief §2: color-success / color-warning / color-error */
+  --color-success: #2e7d4f;
+  --color-warning: #a65e0b;
+  --color-error: #b3261e;
+
+  /* Structure — brief §2: color-border-default */
+  --color-hairline: #e4d9c8;
+
+  /* WhatsApp's own brand green (brief §5.1) — deliberately distinct from
+     --color-success, so a WhatsApp action never reads as a site status. */
+  --color-whatsapp: #25d366;
+  --color-whatsapp-dark: #1da851;
+
+  /* Typography — brief §3. Actual font files loaded via next/font/google
+     in app/layout.tsx, which sets --font-playfair / --font-inter. */
+  --font-heading: var(--font-playfair), Georgia, serif;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-ivory);
+  color: var(--color-charcoal);
+  font-family: var(--font-body);
+}
+
+/* Visible focus ring everywhere, per brief §6/§10 — never suppressed
+   without a replacement. */
+:focus-visible {
+  outline: 2px solid var(--color-charcoal);
+  outline-offset: 2px;
+}
+
+/* Respect reduced-motion (brief §9): collapse all transitions/animations
+   to instant rather than removing feedback entirely. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
