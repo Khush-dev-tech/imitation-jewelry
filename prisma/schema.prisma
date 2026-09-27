@@ -11,8 +11,14 @@
 // Revisit if DB-level enforcement becomes a requirement.
 
 generator client {
-  provider = "prisma-client"
-  output   = "../lib/generated/prisma"
+  provider      = "prisma-client"
+  output        = "../lib/generated/prisma"
+  // "native" for local dev (Windows/Mac/Linux dev machines); explicit
+  // rhel-openssl-3.0.x because Vercel's serverless Node.js runtime uses
+  // Amazon Linux, which differs from whatever OS actually runs `npm install`
+  // during the build — without this, the deployed function can't find a
+  // matching query engine binary.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
